@@ -488,7 +488,7 @@ function printAll(){
 }
 
 /* ---------------- gate scanner ---------------- */
-let stream=null, scanning=false, lastScanned='', lastScanTime=0;
+let stream=null, scanning=false;
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
 let ctx;
@@ -496,6 +496,47 @@ try{ ctx = canvas.getContext('2d', {willReadFrequently:true}); }catch(e){ ctx = 
 if(!ctx) ctx = canvas.getContext('2d');
 let scanFrames=0, scanAttempts=0;
 const SCAN_MAX_W = 700; // downscale camera frame before decoding — much faster + more reliable
+
+const SCAN_COOLDOWN_MS = 5000;
+let scanLocked = false;
+function lockScanner(){
+  scanLocked = true;
+  setTimeout(()=>{ scanLocked = false; }, SCAN_COOLDOWN_MS);
+}
+
+let audioCtx = null;
+function beep(freq, ms){
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.value = 0.25;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + ms/1000);
+  }catch(e){ console.error('beep failed', e); }
+}
+function flashScreen(){
+  const el = document.getElementById('scan-status');
+  if(!el) return;
+  el.style.transition = 'none';
+  el.style.filter = 'brightness(1.8)';
+  requestAnimationFrame(()=>{
+    el.style.transition = 'filter .35s';
+    el.style.filter = 'brightness(1)';
+  });
+}
+// Vibration API: works on Android/Chrome, NOT supported by Safari/iOS at all (Apple restriction on web pages).
+// We still call it (harmless no-op where unsupported) and always back it up with beep + flash so iPhone users get feedback too.
+function scanFeedback(kind){
+  if(navigator.vibrate){
+    navigator.vibrate(kind==='invalid' ? [80,60,80] : 120);
+  }
+  beep(kind==='invalid' ? 220 : 880, kind==='invalid' ? 150 : 120);
+  flashScreen();
+}
 
 document.getElementById('cam-start').addEventListener('click', startCamera);
 document.getElementById('cam-stop').addEventListener('click', stopCamera);
@@ -532,11 +573,10 @@ function scanLoop(){
       ctx.drawImage(video,0,0,canvas.width,canvas.height);
       const img = ctx.getImageData(0,0,canvas.width,canvas.height);
       scanAttempts++;
-      const code = jsQR(img.data, img.width, img.height, {inversionAttempts:'attemptBoth'});
-      if(code && code.data){
-        const t = Date.now();
-        if(code.data!==lastScanned || t-lastScanTime>2500){
-          lastScanned = code.data; lastScanTime = t;
+      if(!scanLocked){
+        const code = jsQR(img.data, img.width, img.height, {inversionAttempts:'attemptBoth'});
+        if(code && code.data){
+          lockScanner();
           handleScan(code.data.trim());
         }
       }
@@ -560,6 +600,7 @@ function setStatus(kind, big, small, fee){
   const el = document.getElementById('scan-status');
   el.className = 'scan-status '+kind;
   el.innerHTML = `<div class="big">${big}</div><div class="small">${small}</div>${fee?`<div class="fee">${fee}</div>`:''}`;
+  scanFeedback(kind);
 }
 
 /* Payload is "ID.SIG". The gate re-derives the signature from the ID and rejects
