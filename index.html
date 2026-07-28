@@ -228,12 +228,13 @@
       <h2>Camera scan</h2>
       <div class="scan-layout">
         <div>
-          <video id="video" playsinline></video>
+          <video id="video" playsinline muted autoplay></video>
           <canvas id="canvas" style="display:none;"></canvas>
           <div class="btn-row" style="margin-top:10px;">
             <button class="btn btn-gold" id="cam-start">Start camera</button>
             <button class="btn btn-ghost" id="cam-stop" style="display:none;">Stop camera</button>
           </div>
+          <div id="scan-debug" style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);margin-top:6px;"></div>
           <div class="manual">
             <input type="text" id="manual-id" placeholder="Or type ticket ID (e.g. NVTC10-A1B2C3)">
             <button class="btn btn-gold" onclick="manualCheck()">Check</button>
@@ -477,7 +478,9 @@ function printAll(){
 let stream=null, scanning=false, lastScanned='', lastScanTime=0;
 const video = document.getElementById('video');
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', {willReadFrequently:true});
+let scanFrames=0, scanAttempts=0;
+const SCAN_MAX_W = 700; // downscale camera frame before decoding — much faster + more reliable
 
 document.getElementById('cam-start').addEventListener('click', startCamera);
 document.getElementById('cam-stop').addEventListener('click', stopCamera);
@@ -485,7 +488,7 @@ document.getElementById('cam-stop').addEventListener('click', stopCamera);
 async function startCamera(){
   if(!requireDb()) return;
   try{
-    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment', width:{ideal:1280}, height:{ideal:720}}});
     video.srcObject = stream;
     await video.play();
     scanning = true;
@@ -504,11 +507,14 @@ function stopCamera(){
 }
 function scanLoop(){
   if(!scanning) return;
-  if(video.readyState===video.HAVE_ENOUGH_DATA){
-    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+  if(video.readyState===video.HAVE_ENOUGH_DATA && video.videoWidth>0){
+    const scale = Math.min(1, SCAN_MAX_W/video.videoWidth);
+    canvas.width = Math.round(video.videoWidth*scale);
+    canvas.height = Math.round(video.videoHeight*scale);
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const img = ctx.getImageData(0,0,canvas.width,canvas.height);
-    const code = jsQR(img.data, img.width, img.height);
+    scanAttempts++;
+    const code = jsQR(img.data, img.width, img.height, {inversionAttempts:'attemptBoth'});
     if(code && code.data){
       const t = Date.now();
       if(code.data!==lastScanned || t-lastScanTime>2500){
@@ -517,6 +523,9 @@ function scanLoop(){
       }
     }
   }
+  scanFrames++;
+  const dbg = document.getElementById('scan-debug');
+  if(dbg) dbg.textContent = 'frames: '+scanFrames+' · decode attempts: '+scanAttempts+' · video: '+video.videoWidth+'x'+video.videoHeight;
   requestAnimationFrame(scanLoop);
 }
 function manualCheck(){
