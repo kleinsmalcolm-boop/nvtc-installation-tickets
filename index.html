@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <!-- Firebase (free tier) — this is what makes the gate scanner sync live across devices -->
@@ -285,6 +285,19 @@ const firebaseConfig = {
   appId: "1:374830628730:web:2ec1f1b3a831081f9860c3"
 };
 const EVENT_SECRET = "NVTC-2026-secret-run";
+
+(function(){
+  const missing = [];
+  if(typeof QRCode === 'undefined') missing.push('QRCode (qrcodejs)');
+  if(typeof jsQR === 'undefined') missing.push('jsQR');
+  if(typeof firebase === 'undefined') missing.push('firebase');
+  if(missing.length){
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#3a1010;border:1px solid #e6483c;border-radius:12px;padding:14px 16px;margin-bottom:16px;color:#ff8a80;font-size:13px;';
+    banner.textContent = 'Missing library/libraries: '+missing.join(', ')+' — a <script> tag failed to load (check the CDN URL, or your connection).';
+    document.querySelector('.app').prepend(banner);
+  }
+})();
 
 let db = null;
 try{
